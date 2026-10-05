@@ -1,0 +1,7 @@
+# The Xcode project is generated from project.yml by XcodeGen
+*.xcodeproj/
+build/
+xcuserdata/
+DerivedData/
+.DS_Store
+*.ipa
