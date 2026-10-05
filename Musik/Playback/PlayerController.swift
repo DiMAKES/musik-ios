@@ -29,8 +29,11 @@ final class PlayerController: ObservableObject {
     private let player = AVPlayer()
 
     private(set) var sessionId: String?
-    /// Bumped whenever the loaded item or pending advance changes; stale callbacks compare against it.
+    /// Bumped whenever the loaded item or pending advance changes; stale item callbacks compare against it.
     private var generation = 0
+    /// Identifies the latest start / skip / advance request; only its response is applied
+    /// and only it clears `busy` (loading the next item bumps `generation`, not this).
+    private var requestSeq = 0
     private var startSent = false
     private var listened: Double = 0
     private var lastPos: Double = 0
@@ -101,13 +104,12 @@ final class PlayerController: ObservableObject {
 
     private func start(_ request: @escaping () async throws -> PlayPayload) {
         generation += 1
-        let gen = generation
-        busy = true
+        let req = nextRequest()
         Task {
-            defer { if gen == self.generation { self.busy = false } }
+            defer { self.finish(req) }
             do {
                 let payload = try await request()
-                guard gen == self.generation else { return }
+                guard req == self.requestSeq else { return }
                 self.apply(payload, autoplay: true)
             } catch {
                 self.app?.show(error)
@@ -196,20 +198,29 @@ final class PlayerController: ObservableObject {
     func skip() {
         guard let track = current, sessionId != nil else { return }
         generation += 1
-        let gen = generation
+        let req = nextRequest()
         player.pause()
-        busy = true
         Task {
-            defer { if gen == self.generation { self.busy = false } }
+            defer { self.finish(req) }
             do {
                 let res = try await self.postEvent("skip", track: track, reason: "skipped", retry: true)
-                guard gen == self.generation, let res else { return }
+                guard req == self.requestSeq, let res else { return }
                 self.advance(with: res)
             } catch {
                 self.app?.show(error)
-                if gen == self.generation { self.player.play() }
+                if req == self.requestSeq { self.player.play() }
             }
         }
+    }
+
+    private func nextRequest() -> Int {
+        requestSeq += 1
+        busy = true
+        return requestSeq
+    }
+
+    private func finish(_ req: Int) {
+        if req == requestSeq { busy = false }
     }
 
     func back() {
@@ -226,12 +237,13 @@ final class PlayerController: ObservableObject {
     private func trackFinished(gen: Int) {
         guard gen == generation, let track = current else { return }
         generation += 1
-        let advanceGen = generation
+        requestSeq += 1
+        let req = requestSeq
         position = duration
         Task {
             do {
                 let res = try await self.postEvent("track_end", track: track, reason: "completed", retry: true)
-                guard advanceGen == self.generation, let res else { return }
+                guard req == self.requestSeq, let res else { return }
                 self.advance(with: res)
             } catch {
                 self.app?.show(error)
@@ -419,6 +431,7 @@ final class PlayerController: ObservableObject {
 
     func stop(clearSession: Bool) {
         generation += 1
+        requestSeq += 1
         player.pause()
         player.replaceCurrentItem(with: nil)
         itemNotifications.forEach { NotificationCenter.default.removeObserver($0) }
