@@ -31,6 +31,19 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Камера нужна, чтобы отсканировать QR-код сервера musik.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>app.musik.ios.connect</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>musik</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>musik подключается к твоему серверу в локальной сети.</string>
 	<key>UIBackgroundModes</key>

@@ -49,6 +49,16 @@ final class PlayerController: ObservableObject {
     private var nowPlayingArtwork: MPMediaItemArtwork?
     private var interruptionObserver: NSObjectProtocol?
 
+    // Cross-device sync (see the Sync section): this device owns the shared state
+    // while it plays; others pause and cue the same track and position.
+    private var syncOwner = false
+    private var lastSyncWrite = Date.distantPast
+    private var lastSyncSeen = Date.distantPast
+    private var appActive = true
+    private var syncTask: Task<Void, Never>?
+    /// Position to restore once the cued item is ready to play.
+    private var pendingSeek: Double?
+
     init(api: APIClient, settings: Settings) {
         self.api = api
         self.settings = settings
@@ -56,6 +66,7 @@ final class PlayerController: ObservableObject {
         configureAudioSession()
         configureRemoteCommands()
         observePlayer()
+        startSyncLoop()
     }
 
     var hasSession: Bool { sessionId != nil }
@@ -117,8 +128,14 @@ final class PlayerController: ObservableObject {
         }
     }
 
-    /// Resume the last session after an app restart (paused, like the web UI).
+    /// Resume after an app restart (paused, like the web UI): where the owner last
+    /// listened on any device, otherwise this device's last session.
     func restore() async {
+        guard current == nil else { return }
+        if let shared = try? await api.playbackState(), let state = shared.state {
+            noteSeen(state)
+            if await cue(state, fallback: shared.track) { return }
+        }
         guard current == nil, let sid = settings.sessionId else { return }
         do {
             let payload: PlayPayload = try await api.get("/api/now", query: [URLQueryItem(name: "session_id", value: sid)])
@@ -191,6 +208,7 @@ final class PlayerController: ObservableObject {
                 self.seeking = false
                 self.lastPos = self.player.currentTime().seconds
                 self.updateNowPlaying()
+                self.pushState()
             }
         }
     }
@@ -370,6 +388,10 @@ final class PlayerController: ObservableObject {
                     let d = item.duration.seconds
                     if d.isFinite, d > 0 { self.duration = d }
                     self.updateNowPlaying()
+                    if let at = self.pendingSeek {
+                        self.pendingSeek = nil
+                        self.seek(to: at)
+                    }
                 case .failed:
                     self.playbackFailed(gen: gen, error: error)
                 default:
@@ -405,6 +427,13 @@ final class PlayerController: ObservableObject {
                 if playing != self.isPlaying {
                     self.isPlaying = playing
                     self.updateNowPlaying()
+                    if playing {
+                        // Playing here takes the shared state over from any other device.
+                        self.syncOwner = true
+                        self.pushState(playing: true, claim: true)
+                    } else {
+                        self.pushState(playing: false)
+                    }
                 }
             }
         }
@@ -428,6 +457,7 @@ final class PlayerController: ObservableObject {
             duration = d
             updateNowPlaying()
         }
+        if isPlaying, Date().timeIntervalSince(lastSyncWrite) >= 5 { pushState() }
         if isPlaying, Date().timeIntervalSince(lastProgressAt) >= 4 {
             lastProgressAt = Date()
             Task { _ = try? await self.postEvent("progress") }
@@ -435,6 +465,8 @@ final class PlayerController: ObservableObject {
     }
 
     func stop(clearSession: Bool) {
+        syncOwner = false
+        pendingSeek = nil
         generation += 1
         requestSeq += 1
         player.pause()
@@ -454,6 +486,116 @@ final class PlayerController: ObservableObject {
             settings.sessionId = nil
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    // MARK: - Sync
+
+    /// Called from RootView on scenePhase changes.
+    func sceneChanged(active: Bool, background: Bool) {
+        appActive = active
+        if active {
+            Task { await syncPoll() }
+        } else if background {
+            pushState()
+        }
+    }
+
+    /// Writes where this device is. `claim` takes the state over (playback started
+    /// here); other writes are heartbeats the server accepts only from the owner.
+    private func pushState(playing: Bool? = nil, claim: Bool = false) {
+        guard syncOwner, let sid = sessionId, let track = current else { return }
+        lastSyncWrite = Date()
+        let body: [String: Any] = [
+            "session_id": sid,
+            "track_id": track.id,
+            "position_sec": position,
+            "listened_sec": listened,
+            "playing": playing ?? isPlaying,
+            "client_id": settings.clientId,
+            "claim": claim,
+        ]
+        Task {
+            guard let res = try? await self.api.putPlaybackState(body), let state = res.state else { return }
+            self.noteSeen(state)
+            if !res.ok { await self.yield(to: state, fallback: nil) }
+        }
+    }
+
+    private func startSyncLoop() {
+        syncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                guard let self else { return }
+                if self.appActive || self.isPlaying { await self.syncPoll() }
+            }
+        }
+    }
+
+    private func syncPoll() async {
+        guard app?.phase == .ready,
+              let shared = try? await api.playbackState(), let state = shared.state,
+              state.clientId != settings.clientId,
+              Self.date(state.updatedAt) > lastSyncSeen else { return }
+        noteSeen(state)
+        await yield(to: state, fallback: shared.track)
+    }
+
+    /// Another device owns playback now: stop here (ownership first, so the pause
+    /// does not write back) and cue its track and position.
+    private func yield(to state: PlaybackState, fallback: Track?) async {
+        syncOwner = false
+        if player.timeControlStatus != .paused {
+            player.pause()
+            app?.show("Играет на другом устройстве")
+        }
+        _ = await cue(state, fallback: fallback)
+    }
+
+    /// Loads the shared track paused at the shared position. The listen already
+    /// started on the other device, so no new track_start is sent (`startSent`).
+    @discardableResult
+    private func cue(_ state: PlaybackState, fallback: Track?) async -> Bool {
+        if current?.id == state.trackId, player.currentItem != nil {
+            if abs(position - state.positionSec) > 2 { seek(to: state.positionSec) }
+            listened = max(listened, state.listenedSec)
+            return true
+        }
+        setSession(state.sessionId)
+        var track = fallback
+        if var now: PlayPayload = try? await api.get("/api/now", query: [URLQueryItem(name: "session_id", value: state.sessionId)]) {
+            // /api/now carries impression_id for the session's current track.
+            if let cur = now.current, cur.id == state.trackId { track = cur }
+            now.current = nil
+            apply(now, autoplay: false) // queue / list only
+        }
+        guard let track else { return false }
+        load(track, autoplay: false)
+        startSent = true
+        listened = state.listenedSec
+        position = state.positionSec
+        pendingSeek = state.positionSec > 1 ? state.positionSec : nil
+        updateNowPlaying()
+        return true
+    }
+
+    private func noteSeen(_ state: PlaybackState) {
+        let at = Self.date(state.updatedAt)
+        if at > lastSyncSeen { lastSyncSeen = at }
+    }
+
+    /// Go writes RFC 3339 with up to 9 fractional digits; ISO8601DateFormatter reads 3.
+    static func date(_ raw: String) -> Date {
+        var s = raw
+        if let dot = s.firstIndex(of: "."),
+           let end = s[dot...].firstIndex(where: { $0 == "Z" || $0 == "+" || $0 == "-" }) {
+            let digits = s[s.index(after: dot)..<end]
+            s.replaceSubrange(s.index(after: dot)..<end, with: String(digits.prefix(3)))
+        }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s) ?? .distantPast
     }
 
     // MARK: - Events

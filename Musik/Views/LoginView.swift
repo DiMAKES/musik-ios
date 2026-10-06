@@ -7,6 +7,7 @@ struct LoginView: View {
     @State private var secret = ""
     @State private var busy = false
     @State private var error: String?
+    @State private var scanning = false
 
     var body: some View {
         ScrollView {
@@ -19,6 +20,19 @@ struct LoginView: View {
                         .foregroundStyle(Theme.muted)
                 }
                 .padding(.top, 48)
+
+                Button {
+                    scanning = true
+                } label: {
+                    Label("Сканировать QR-код", systemImage: "qrcode.viewfinder")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(ChipButtonStyle(active: true))
+                .disabled(busy)
+
+                Text("QR-код — в веб-интерфейсе: Профиль → Настройки → «Показать QR». Или введи данные вручную:")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.muted)
 
                 field("Адрес сервера") {
                     TextField("http://192.168.1.10:8787", text: $baseURL)
@@ -62,7 +76,14 @@ struct LoginView: View {
             .padding(24)
         }
         .scrollDismissesKeyboard(.interactively)
-        .onAppear { if baseURL.isEmpty { baseURL = app.settings.baseURL } }
+        .onAppear {
+            if baseURL.isEmpty { baseURL = app.settings.baseURL }
+            usePendingLink()
+        }
+        .onChange(of: app.pendingConnect) { _ in usePendingLink() }
+        .sheet(isPresented: $scanning) {
+            QRScannerSheet { link in app.pendingConnect = link }
+        }
     }
 
     private func field<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
@@ -72,6 +93,21 @@ struct LoginView: View {
                 .padding(14)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08)))
+        }
+    }
+
+    /// A scanned QR or a musik:// link fills the form; with a token it signs in at once.
+    private func usePendingLink() {
+        guard let link = app.pendingConnect else { return }
+        app.pendingConnect = nil
+        baseURL = link.baseURL
+        error = nil
+        if let token = link.token {
+            mode = .token
+            secret = token
+            Task { await submit() }
+        } else {
+            error = "В QR только адрес сервера — введи токен или пароль."
         }
     }
 

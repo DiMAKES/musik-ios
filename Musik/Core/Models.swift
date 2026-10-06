@@ -175,6 +175,29 @@ struct FavoriteToggleResult: Decodable {
     var type: String?
 }
 
+/// Where the owner last listened (`/api/playback/state`): shared by web and apps so
+/// playback continues on another device from the same track and position.
+struct PlaybackState: Decodable {
+    var sessionId: String
+    var trackId: Int
+    var positionSec: Double
+    var listenedSec: Double
+    var playing: Bool
+    var clientId: String
+    var updatedAt: String
+}
+
+struct PlaybackStateResponse: Decodable {
+    var state: PlaybackState?
+    var track: Track?
+}
+
+struct PlaybackStatePut: Decodable {
+    /// false: another device took playback over; `state` is theirs.
+    var ok: Bool
+    var state: PlaybackState?
+}
+
 struct Health: Decodable {
     var ok: Bool?
     var version: String?

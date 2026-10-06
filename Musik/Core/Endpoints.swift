@@ -19,6 +19,13 @@ extension APIClient {
 
     func profile() async throws -> Profile { try await get("/api/profile") }
 
+    // Cross-device playback state
+    func playbackState() async throws -> PlaybackStateResponse { try await get("/api/playback/state") }
+
+    func putPlaybackState(_ body: [String: Any]) async throws -> PlaybackStatePut {
+        try decode(PlaybackStatePut.self, from: try await send("PUT", "/api/playback/state", body: body))
+    }
+
     // Catalog
     func library(artist: String? = nil, album: String? = nil, limit: Int? = nil) async throws -> [Track] {
         var q: [URLQueryItem] = []
