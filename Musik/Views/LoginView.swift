@@ -102,9 +102,11 @@ struct LoginView: View {
         app.pendingConnect = nil
         baseURL = link.baseURL
         error = nil
-        if let token = link.token {
+        // The secret always comes from the link: a token or password typed for another
+        // server must never be sent to the new address.
+        secret = link.token ?? ""
+        if link.token != nil {
             mode = .token
-            secret = token
             Task { await submit() }
         } else {
             error = "В QR только адрес сервера — введи токен или пароль."
