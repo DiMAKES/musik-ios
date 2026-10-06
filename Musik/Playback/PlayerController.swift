@@ -284,7 +284,9 @@ final class PlayerController: ObservableObject {
     func like() {
         guard let track = current, let app else { return }
         Task {
-            if await app.toggleFavoriteTrack(track.id) == true {
+            let favorited = await app.toggleFavoriteTrack(track.id)
+            self.updateNowPlaying()
+            if favorited == true {
                 if let res = try? await self.postEvent("like", track: track) { self.applyLists(res) }
             }
         }
@@ -296,7 +298,10 @@ final class PlayerController: ObservableObject {
             do {
                 guard let res = try await self.postEvent("dislike", track: track) else { return }
                 self.applyLists(res)
-                if track.id == self.current?.id { self.disliked = true }
+                if track.id == self.current?.id {
+                    self.disliked = true
+                    self.updateNowPlaying()
+                }
                 self.app?.show(res.ignored == true ? "Уже дизлайк" : "Дизлайк — меньше такого")
             } catch {
                 self.app?.show(error)
@@ -512,10 +517,6 @@ final class PlayerController: ObservableObject {
             self?.skip()
             return .success
         }
-        c.previousTrackCommand.addTarget { [weak self] _ in
-            self?.back()
-            return .success
-        }
         c.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             self?.seek(to: e.positionTime)
@@ -523,9 +524,28 @@ final class PlayerController: ObservableObject {
         }
         c.skipForwardCommand.isEnabled = false
         c.skipBackwardCommand.isEnabled = false
+
+        // Like / dislike on the lock screen. iOS shows feedback commands in the slot of the
+        // previous-track button, so that one stays in the app only.
+        c.likeCommand.localizedTitle = "Нравится"
+        c.likeCommand.localizedShortTitle = "Лайк"
+        c.likeCommand.addTarget { [weak self] _ in
+            self?.like()
+            return .success
+        }
+        c.dislikeCommand.localizedTitle = "Не нравится"
+        c.dislikeCommand.localizedShortTitle = "Дизлайк"
+        c.dislikeCommand.addTarget { [weak self] _ in
+            self?.dislike()
+            return .success
+        }
+        c.previousTrackCommand.isEnabled = false
     }
 
     private func updateNowPlaying() {
+        let c = MPRemoteCommandCenter.shared()
+        c.likeCommand.isActive = isFavorite
+        c.dislikeCommand.isActive = disliked
         guard let t = current else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
