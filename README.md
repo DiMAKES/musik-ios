@@ -13,6 +13,14 @@ musik — self-hosted умный плеер для твоей собственн
 с той же «умной» логикой, что у веб-интерфейса. Сам сервер нужно поставить
 отдельно — инструкция в [оригинальном репозитории](https://github.com/torwin-job/musik).
 
+<p align="center">
+  <img src="docs/screenshots/home.jpg" width="180" alt="Главная: радио, миксы «Для тебя» и по дням недели">
+  <img src="docs/screenshots/player.jpg" width="180" alt="Плеер: обложка, перемотка, кнопки">
+  <img src="docs/screenshots/lyrics.jpg" width="180" alt="Плеер с текстом песни">
+  <img src="docs/screenshots/library.jpg" width="180" alt="Библиотека: любимые треки">
+  <img src="docs/screenshots/profile.jpg" width="180" alt="Профиль: вкус, топ артистов, ссылки на эфир">
+</p>
+
 ## Что умеет
 
 - **Радио по вкусу**: бесконечная очередь, которая подстраивается под лайки,
