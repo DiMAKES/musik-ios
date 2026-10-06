@@ -51,24 +51,27 @@ struct ArtworkView: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .transition(.opacity)
-            } else {
-                LinearGradient(colors: Theme.placeholder(for: trackId ?? 0),
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                Text(fallback.prefix(1).uppercased())
-                    .font(.system(size: CGFloat(size) / 4, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .minimumScaleFactor(0.2)
-                    .padding(6)
+        // The square sets the size; the picture is an overlay, so a non-square cover
+        // filled into it cannot widen the layout around it.
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                } else {
+                    LinearGradient(colors: Theme.placeholder(for: trackId ?? 0),
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Text(fallback.prefix(1).uppercased())
+                        .font(.system(size: CGFloat(size) / 4, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                        .minimumScaleFactor(0.2)
+                        .padding(6)
+                }
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .task(id: trackId) {
             image = nil
             guard let trackId, let url = ImageLoader.shared.api?.artworkURL(trackId: trackId, width: size) else { return }
