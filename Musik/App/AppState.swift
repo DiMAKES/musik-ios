@@ -13,6 +13,8 @@ final class AppState: ObservableObject {
     @Published var favoriteAlbums: Set<String> = []
     /// Bumped when shelves should reload (favorites or mixes changed).
     @Published var homeRevision = 0
+    /// A server link from a scanned QR or a musik:// URL, waiting for the login screen.
+    @Published var pendingConnect: ConnectLink?
 
     let settings: Settings
     let api: APIClient
@@ -79,6 +81,16 @@ final class AppState: ObservableObject {
         }
         phase = .ready
         await refreshFavorites()
+    }
+
+    /// musik://connect?url=…&token=… opened from the system Camera or another app.
+    func open(_ url: URL) {
+        guard let link = ConnectLink(url: url) else { return }
+        if phase == .ready {
+            show("Уже подключено к серверу. Чтобы подключить другой, выйди в профиле.")
+        } else {
+            pendingConnect = link
+        }
     }
 
     func logout() async {

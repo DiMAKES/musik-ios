@@ -17,6 +17,7 @@ struct MusikApp: App {
 
 struct RootView: View {
     @EnvironmentObject var app: AppState
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -35,6 +36,10 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { ToastView() }
         .task { await app.bootstrap() }
+        .onOpenURL { app.open($0) }
+        .onChange(of: scenePhase) { phase in
+            app.player.sceneChanged(active: phase == .active, background: phase == .background)
+        }
     }
 }
 
