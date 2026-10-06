@@ -8,6 +8,9 @@ on:
     branches: ["**"]
     tags: ["v*"]
   pull_request:
+  # Publishing a release (tag vX.Y.Z) builds the app and attaches the .ipa to it.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
