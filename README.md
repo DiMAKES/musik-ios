@@ -97,7 +97,10 @@ iOS перестаёт его запускать, и его нужно **пер�
 Проект описан в [`project.yml`](project.yml) (XcodeGen), `.xcodeproj` не хранится
 в git. Сборку делает GitHub Actions на macOS-раннере —
 [`.github/workflows/ios.yml`](.github/workflows/ios.yml): любой push собирает
-неподписанный `.ipa`, а тег `vX.Y.Z` прикладывает его к Release.
+неподписанный `.ipa`, а сборка ветки `main` выкладывает его в Release
+`v<MARKETING_VERSION>` из `project.yml` (создаёт релиз или обновляет файл в нём).
+Чтобы выпустить новую версию, подними `MARKETING_VERSION`; описание релиза — в
+[`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 Локально на Mac:
 

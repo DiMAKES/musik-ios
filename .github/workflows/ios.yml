@@ -8,9 +8,6 @@ on:
     branches: ["**"]
     tags: ["v*"]
   pull_request:
-  # Publishing a release (tag vX.Y.Z) builds the app and attaches the .ipa to it.
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -59,8 +56,24 @@ jobs:
           name: xcodebuild-log
           path: build/xcodebuild.log
           if-no-files-found: ignore
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Every build of main (or a vX.Y.Z tag) publishes the .ipa to the release for the
+      # app version in project.yml, creating that release and tag on first use.
+      - name: Release tag
+        id: release
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="v$(sed -nE 's/^ *MARKETING_VERSION: *"?([0-9.]+)"?.*/\1/p' project.yml | head -1)"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Publish to release
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: musik iOS ${{ steps.release.outputs.tag }}
+          body_path: RELEASE_NOTES.md
           files: build/Musik-unsigned.ipa
+          make_latest: true
