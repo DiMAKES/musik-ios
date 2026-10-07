@@ -12,10 +12,38 @@ extension View {
     func withRoutes() -> some View {
         navigationDestination(for: Route.self) { route in
             switch route {
-            case .artist(let name): ArtistDetailView(artist: name)
-            case .album(let artist, let album): AlbumDetailView(artist: artist, album: album)
+            case .artist(let name): ArtistDetailView(artist: name).miniPlayerSpace()
+            case .album(let artist, let album): AlbumDetailView(artist: artist, album: album).miniPlayerSpace()
             }
         }
+    }
+
+    /// Room at the bottom for the mini player floating over the tab, so it does not cover
+    /// the last rows (or the logout button).
+    func miniPlayerSpace() -> some View {
+        modifier(MiniPlayerSpace())
+    }
+}
+
+private struct MiniPlayerSpace: ViewModifier {
+    @Environment(\.miniPlayerInset) private var inset
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: inset)
+        }
+    }
+}
+
+private struct MiniPlayerInsetKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 0
+}
+
+extension EnvironmentValues {
+    /// Height of the mini player over the current tab, 0 when nothing plays.
+    var miniPlayerInset: CGFloat {
+        get { self[MiniPlayerInsetKey.self] }
+        set { self[MiniPlayerInsetKey.self] = newValue }
     }
 }
 

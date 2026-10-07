@@ -47,6 +47,7 @@ struct MainView: View {
     @EnvironmentObject var app: AppState
     @EnvironmentObject var player: PlayerController
     @State private var showPlayer = false
+    @State private var miniPlayerHeight: CGFloat = 0
 
     var body: some View {
         TabView {
@@ -65,17 +66,31 @@ struct MainView: View {
         }
     }
 
+    /// A safe-area inset on the NavigationStack does not reach the lists inside it, so the
+    /// mini player floats over the stack and every screen leaves room for it itself
+    /// (`miniPlayerSpace()`), sized by the player's measured height.
     private func tab<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         NavigationStack {
             content()
+                .miniPlayerSpace()
                 .withRoutes()
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .environment(\.miniPlayerInset, player.current == nil ? 0 : miniPlayerHeight)
+        .overlay(alignment: .bottom) {
             if player.current != nil {
                 MiniPlayer { showPlayer = true }
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: MiniPlayerHeightKey.self, value: geo.size.height)
+                    })
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .onPreferenceChange(MiniPlayerHeightKey.self) { miniPlayerHeight = $0 }
         .animation(.easeOut(duration: 0.25), value: player.current?.id)
     }
+}
+
+private struct MiniPlayerHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
