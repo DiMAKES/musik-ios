@@ -5,10 +5,13 @@ import Foundation
 ///     musik://connect?url=<server base url>&token=<API token>
 ///
 /// The same link opens the app from the system Camera. A QR with a plain
-/// http(s) address is accepted too and only fills the address field.
+/// http(s) address is accepted too and only fills the address field. An
+/// invitation link from a server with accounts (`https://host/?invitation=<secret>`)
+/// fills the address and the invitation for creating an account.
 struct ConnectLink: Equatable {
     var baseURL: String
     var token: String?
+    var invitation: String?
 
     init?(_ raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -21,6 +24,7 @@ struct ConnectLink: Equatable {
                   let url = Self.query(comps, "url"), Self.isServerURL(url) else { return nil }
             baseURL = Settings.normalize(url)
             token = Self.query(comps, "token")
+            invitation = Self.query(comps, "invitation")
         case "http", "https":
             guard Self.isServerURL(text) else { return nil }
             var base = comps
@@ -28,6 +32,7 @@ struct ConnectLink: Equatable {
             base.fragment = nil
             baseURL = Settings.normalize(base.string ?? text)
             token = nil
+            invitation = Self.query(comps, "invitation")
         default:
             return nil
         }

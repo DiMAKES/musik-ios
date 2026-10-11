@@ -13,6 +13,19 @@ extension APIClient {
         _ = try await send("POST", "/api/auth/login", body: ["password": password], redirectOn401: false)
     }
 
+    /// Accounts: trades name and password for a device token, no browser or cookie.
+    func deviceToken(username: String, password: String, deviceName: String) async throws -> TokenGrant {
+        let body = ["username": username, "password": password, "device_name": deviceName]
+        return try decode(TokenGrant.self,
+                          from: try await send("POST", "/api/auth/token", body: body, redirectOn401: false))
+    }
+
+    /// Accounts: creates one from an invitation (the secret from `/?invitation=…`).
+    func register(invitation: String, username: String, password: String) async throws {
+        let body = ["invitation": invitation, "username": username, "password": password]
+        _ = try await send("POST", "/api/auth/register", body: body, redirectOn401: false)
+    }
+
     func logout() async {
         _ = try? await send("POST", "/api/auth/logout", redirectOn401: false)
     }
