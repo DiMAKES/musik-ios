@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// App-wide state: login gate, toasts and favorite sets shared by every screen.
 @MainActor
@@ -59,7 +60,15 @@ final class AppState: ObservableObject {
     enum LoginMode: String, CaseIterable, Identifiable {
         case token = "API token"
         case password = "Пароль"
+        case account = "Аккаунт"
         var id: String { rawValue }
+    }
+
+    /// The server has accounts: the shared password does not exist there.
+    struct AccountsRequired: LocalizedError {
+        var errorDescription: String? {
+            "На этом сервере вход по аккаунту: имя и пароль или приглашение"
+        }
     }
 
     func login(baseURL: String, mode: LoginMode, secret: String) async throws {
@@ -70,7 +79,11 @@ final class AppState: ObservableObject {
             settings.token = secret
         case .password:
             settings.token = nil
+            if try await api.authMe().multiUser == true { throw AccountsRequired() }
             try await api.login(password: secret)
+        case .account:
+            // Accounts sign in through login(baseURL:username:password:).
+            throw APIError(status: 0, code: "bad_mode", message: "Введи имя и пароль")
         }
         _ = try await api.health()
         let me = try await api.authMe()
@@ -81,6 +94,48 @@ final class AppState: ObservableObject {
         }
         phase = .ready
         await refreshFavorites()
+    }
+
+    /// Accounts: name and password give this phone its own device token.
+    func login(baseURL: String, username: String, password: String) async throws {
+        settings.baseURL = baseURL
+        try await signIn(username: username, password: password)
+    }
+
+    /// Accounts: creates one from an invitation, then signs in with it.
+    func register(baseURL: String, invitation: String, username: String, password: String) async throws {
+        settings.baseURL = baseURL
+        settings.token = nil
+        clearCookies()
+        try await api.register(invitation: invitation, username: username, password: password)
+        try await signIn(username: username, password: password)
+    }
+
+    private func signIn(username: String, password: String) async throws {
+        settings.token = nil
+        clearCookies()
+        let grant: TokenGrant
+        do {
+            grant = try await api.deviceToken(username: username, password: password,
+                                              deviceName: "\(UIDevice.current.model) · musik iOS")
+        } catch let e as APIError where e.isNotFound {
+            throw APIError(status: 404, code: e.code, message: "Сервер не поддерживает вход по аккаунту — обнови его")
+        }
+        // Register and login leave a browser session cookie; with a Bearer token as
+        // well the server answers 400 credential_conflict, so only the token stays.
+        clearCookies()
+        settings.token = grant.token
+        let me = try await api.authMe()
+        guard me.ok else {
+            settings.token = nil
+            throw APIError(status: 401, code: "auth_required", message: "Сервер не принял токен устройства")
+        }
+        phase = .ready
+        await refreshFavorites()
+    }
+
+    private func clearCookies() {
+        HTTPCookieStorage.shared.cookies?.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
     }
 
     /// musik://connect?url=…&token=… opened from the system Camera or another app.
@@ -97,7 +152,7 @@ final class AppState: ObservableObject {
         player.stop(clearSession: true)
         await api.logout()
         settings.token = nil
-        HTTPCookieStorage.shared.cookies?.forEach { HTTPCookieStorage.shared.deleteCookie($0) }
+        clearCookies()
         ImageLoader.shared.clear()
         favoriteTracks = []
         favoriteArtists = []

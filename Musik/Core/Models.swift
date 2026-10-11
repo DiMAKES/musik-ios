@@ -208,6 +208,14 @@ struct Health: Decodable {
 struct AuthMe: Decodable {
     var ok: Bool
     var authEnabled: Bool?
+    /// true on a server with accounts (MUSIK_MULTI_USER): sign in by name and password.
+    var multiUser: Bool?
+}
+
+/// POST /api/auth/token: the bearer token the app sends from then on. On a server
+/// with accounts it is a device token bound to the account's main profile.
+struct TokenGrant: Decodable {
+    var token: String
 }
 
 struct ArtistCount: Decodable, Hashable {
