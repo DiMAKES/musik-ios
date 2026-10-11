@@ -19,6 +19,8 @@ final class AppState: ObservableObject {
 
     let settings: Settings
     let api: APIClient
+    /// Account session for "Настройки сервера" (profiles, devices, invitations, users).
+    let account: AccountClient
     let player: PlayerController
 
     private var toastTask: Task<Void, Never>?
@@ -28,6 +30,7 @@ final class AppState: ObservableObject {
         let api = APIClient(settings: settings)
         self.settings = settings
         self.api = api
+        self.account = AccountClient(settings: settings)
         self.player = PlayerController(api: api, settings: settings)
         ImageLoader.shared.api = api
         player.app = self
@@ -41,6 +44,7 @@ final class AppState: ObservableObject {
             phase = .login
             return
         }
+        Task { await self.refreshServerMode() }
         do {
             let me = try await api.authMe()
             if me.ok || me.authEnabled == false {
@@ -92,6 +96,9 @@ final class AppState: ObservableObject {
             throw APIError(status: 401, code: "auth_required",
                            message: mode == .token ? "Сервер не принял токен" : "Не удалось войти")
         }
+        settings.deviceTokenId = nil
+        settings.profileId = nil
+        await refreshServerMode()
         phase = .ready
         await refreshFavorites()
     }
@@ -117,7 +124,7 @@ final class AppState: ObservableObject {
         let grant: TokenGrant
         do {
             grant = try await api.deviceToken(username: username, password: password,
-                                              deviceName: "\(UIDevice.current.model) · musik iOS")
+                                              deviceName: deviceName)
         } catch let e as APIError where e.isNotFound {
             throw APIError(status: 404, code: e.code, message: "Сервер не поддерживает вход по аккаунту — обнови его")
         }
@@ -130,8 +137,40 @@ final class AppState: ObservableObject {
             settings.token = nil
             throw APIError(status: 401, code: "auth_required", message: "Сервер не принял токен устройства")
         }
+        settings.multiUser = true
+        settings.username = username
+        settings.deviceTokenId = grant.device?.id
+        settings.profileId = grant.device?.profileId
+        // The same name and password open the account session, so "Настройки сервера"
+        // work right away; if it fails, that screen asks for the password itself.
+        try? await account.signIn(username: username, password: password)
         phase = .ready
         await refreshFavorites()
+    }
+
+    /// Name this phone gets in the server's device list.
+    var deviceName: String { "\(UIDevice.current.model) · musik iOS" }
+
+    /// Whether the server has accounts; asked without credentials.
+    func refreshServerMode() async {
+        guard !settings.baseURL.isEmpty, let me = try? await account.publicAuthMe() else { return }
+        settings.multiUser = me.multiUser == true
+    }
+
+    /// Plays in another profile of the account from now on: this phone gets a new
+    /// device token for it, and the old one is revoked.
+    func useProfile(_ profile: ServerProfile) async throws {
+        let issued = try await account.createDeviceToken(name: deviceName, profileId: profile.id)
+        let old = settings.deviceTokenId
+        player.stop(clearSession: true)
+        settings.token = issued.token
+        settings.deviceTokenId = issued.device.id
+        settings.profileId = profile.id
+        if let old, old != issued.device.id { try? await account.revokeDeviceToken(old) }
+        await refreshFavorites()
+        homeRevision += 1
+        await player.restore()
+        show("Профиль «\(profile.name)»")
     }
 
     private func clearCookies() {
@@ -151,7 +190,10 @@ final class AppState: ObservableObject {
     func logout() async {
         player.stop(clearSession: true)
         await api.logout()
+        await account.signOut()
         settings.token = nil
+        settings.deviceTokenId = nil
+        settings.profileId = nil
         clearCookies()
         ImageLoader.shared.clear()
         favoriteTracks = []
