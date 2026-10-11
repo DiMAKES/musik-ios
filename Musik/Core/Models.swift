@@ -216,6 +216,8 @@ struct AuthMe: Decodable {
 /// with accounts it is a device token bound to the account's main profile.
 struct TokenGrant: Decodable {
     var token: String
+    /// The device token's record (id, profile); absent for the single-user API token.
+    var device: DeviceTokenInfo?
 }
 
 struct ArtistCount: Decodable, Hashable {

@@ -19,6 +19,42 @@ final class Settings: @unchecked Sendable {
         set { Keychain.set("apiToken", newValue) }
     }
 
+    // Server with accounts (MUSIK_MULTI_USER)
+
+    /// The server has accounts: "Настройки сервера" manages them.
+    var multiUser: Bool {
+        get { defaults.bool(forKey: "multiUser") }
+        set { defaults.set(newValue, forKey: "multiUser") }
+    }
+
+    /// Account name, prefilled when the account session has to be opened again.
+    var username: String? {
+        get { defaults.string(forKey: "username") }
+        set { defaults.set(newValue, forKey: "username") }
+    }
+
+    /// This phone's device token and the profile it plays in.
+    var deviceTokenId: String? {
+        get { defaults.string(forKey: "deviceTokenId") }
+        set { defaults.set(newValue, forKey: "deviceTokenId") }
+    }
+
+    var profileId: String? {
+        get { defaults.string(forKey: "profileId") }
+        set { defaults.set(newValue, forKey: "profileId") }
+    }
+
+    /// Account session (cookie and CSRF token) for "Настройки сервера".
+    var accountSession: String? {
+        get { Keychain.get("accountSession") }
+        set { Keychain.set("accountSession", newValue) }
+    }
+
+    var accountCSRF: String? {
+        get { Keychain.get("accountCSRF") }
+        set { Keychain.set("accountCSRF", newValue) }
+    }
+
     /// Last playback session, used to resume after the app was killed.
     var sessionId: String? {
         get { defaults.string(forKey: "sessionId") }

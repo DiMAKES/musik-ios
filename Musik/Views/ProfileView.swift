@@ -92,6 +92,11 @@ struct ProfileView: View {
             }
 
             Section("Сервер") {
+                NavigationLink {
+                    ServerSettingsView()
+                } label: {
+                    Label("Настройки сервера", systemImage: "server.rack")
+                }
                 LabeledContent("Адрес", value: app.settings.baseURL)
                 if let h = health {
                     LabeledContent("Версия", value: [h.version, h.apiVersion].compactMap { $0 }.joined(separator: " · "))
